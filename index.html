@@ -1,0 +1,767 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Baak</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" crossorigin="anonymous">
+<style>
+html{color-scheme:light}body{margin:0}[hidden]{display:none!important}
+/* Layout: one scrolling control room. Sea summary first, then Safe AI trip check, fleet board with coast strip, then the keypad line. Canoe-paint signal colours carry status; the teal sea carries everything else. */
+:root{
+  --bg:#edf3f2;--surface:#ffffff;--ink:#0b2a30;--mute:#4f676b;--line:#cbd9d8;
+  --accent:#0a6a78;--accent-ink:#ffffff;--sea:#d9ebec;
+  --ok:#1b7f48;--ok-bg:#dcf1e4;--warn:#8a5d00;--warn-bg:#fbefc9;--crit:#b52a24;--crit-bg:#fbdcd9;
+  --f-display:'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;
+  --f-body:'Atkinson Hyperlegible','Segoe UI',system-ui,sans-serif;
+  --f-mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#071c20;--surface:#0d2a2f;--ink:#e4f1f0;--mute:#93b3b5;--line:#1f464c;
+  --accent:#4cc3d1;--accent-ink:#04282d;--sea:#0f3a41;
+  --ok:#62d391;--ok-bg:#0f3a28;--warn:#e8bb4d;--warn-bg:#3d3210;--crit:#ff8077;--crit-bg:#4a1a18;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#071c20;--surface:#0d2a2f;--ink:#e4f1f0;--mute:#93b3b5;--line:#1f464c;
+  --accent:#4cc3d1;--accent-ink:#04282d;--sea:#0f3a41;
+  --ok:#62d391;--ok-bg:#0f3a28;--warn:#e8bb4d;--warn-bg:#3d3210;--crit:#ff8077;--crit-bg:#4a1a18;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.5;
+  padding-block:0 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1080px;margin:0 auto;min-width:0}
+h1,h2,h3{font-family:var(--f-display);line-height:1.1;margin:0;text-wrap:balance}
+h2{font-size:1.65rem;font-weight:800;letter-spacing:-.01em}
+h3{font-size:1.05rem;font-weight:800}
+p{margin:0}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.eyebrow{font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);font-weight:700}
+a{color:var(--accent)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+button,select,input,textarea{font:inherit;color:inherit}
+
+/* top bar */
+.top{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:baseline;justify-content:space-between;padding-block:22px 14px;border-bottom:2px solid var(--ink)}
+.brand{font-family:var(--f-display);font-weight:800;font-size:2.4rem;letter-spacing:-.03em;line-height:1}
+.brand small{font-family:var(--f-body);font-weight:700;font-size:.8rem;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);margin-left:10px}
+nav{display:flex;flex-wrap:wrap;gap:6px 18px;font-weight:700;font-size:.95rem}
+nav a{text-decoration:none;color:var(--ink);border-bottom:2px solid var(--line)}
+nav a:hover{border-color:var(--accent)}
+section{padding-block:34px 6px;display:flex;flex-direction:column;gap:18px}
+.lede{color:var(--mute);max-width:62ch}
+.note{font-size:.86rem;color:var(--mute);max-width:70ch}
+
+/* alert strip */
+#alerts{display:flex;flex-direction:column;gap:8px;margin-top:16px}
+.alert{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;padding:12px 14px;border-left:6px solid var(--crit);background:var(--crit-bg);color:var(--ink)}
+.alert b{font-family:var(--f-display)}
+.alert.w{border-color:var(--warn);background:var(--warn-bg)}
+
+/* sea summary */
+.sea{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:22px;align-items:stretch}
+.state{padding:20px;border:2px solid var(--ink);display:flex;flex-direction:column;gap:10px;min-width:0}
+.state .big{font-family:var(--f-display);font-weight:800;font-size:clamp(2.6rem,9vw,4.2rem);line-height:.95;letter-spacing:-.03em}
+.state.calm{background:var(--ok-bg)}.state.rough{background:var(--warn-bg)}.state.danger{background:var(--crit-bg)}
+.pill{display:inline-block;padding:2px 10px;border-radius:99px;font-size:.78rem;font-weight:700;border:1.5px solid currentColor;white-space:nowrap}
+.pill.ok{color:var(--ok)}.pill.warn{color:var(--warn)}.pill.crit{color:var(--crit)}.pill.mute{color:var(--mute)}
+.params{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0;border:1px solid var(--line);background:var(--surface)}
+.params div{padding:10px 12px;border-bottom:1px solid var(--line);border-right:1px solid var(--line);min-width:0}
+.params .k{font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);font-weight:700}
+.params .v{font-family:var(--f-mono);font-size:.92rem;overflow-wrap:anywhere}
+.chartbox{background:var(--surface);border:1px solid var(--line);padding:12px;min-width:0}
+.chartbox svg{width:100%;height:auto;display:block}
+.svg-t{fill:var(--mute);font-family:var(--f-mono);font-size:11px}
+.svg-k{fill:var(--ink);font-family:var(--f-body);font-weight:700;font-size:12px}
+details{border:1px solid var(--line);background:var(--surface)}
+summary{cursor:pointer;padding:12px 14px;font-weight:700}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;padding:0 14px 14px}
+label{display:flex;flex-direction:column;gap:4px;font-size:.82rem;font-weight:700;color:var(--mute);min-width:0}
+input,select,textarea{background:var(--bg);border:1.5px solid var(--line);padding:8px 10px;border-radius:4px;color:var(--ink);width:100%;min-width:0}
+.btn{background:var(--accent);color:var(--accent-ink);border:0;padding:10px 16px;font-weight:700;border-radius:4px;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--ink)}
+.btn:hover{filter:brightness(1.08)}
+
+/* safe ai */
+.ai{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:22px}
+.panel{background:var(--surface);border:1px solid var(--line);padding:16px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.panel .form{padding:0}
+.verdict{display:flex;gap:16px;align-items:center}
+.score{font-family:var(--f-display);font-weight:800;font-size:3.4rem;line-height:1;letter-spacing:-.03em;min-width:2.3ch}
+.lvl{font-family:var(--f-display);font-weight:800;font-size:1.5rem}
+.lvl.go{color:var(--ok)}.lvl.caution{color:var(--warn)}.lvl.stop{color:var(--crit)}
+.meter{height:12px;background:linear-gradient(90deg,var(--ok-bg) 0 35%,var(--warn-bg) 35% 60%,var(--crit-bg) 60%);border:1px solid var(--line);position:relative}
+.meter i{position:absolute;top:-5px;width:4px;height:20px;background:var(--ink);transform:translateX(-2px)}
+ul.why{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+ul.why li{display:flex;gap:10px;align-items:baseline;font-size:.95rem}
+ul.why .pts{font-family:var(--f-mono);font-size:.8rem;color:var(--mute);min-width:3.6ch;text-align:right}
+.sms{font-family:var(--f-mono);font-size:.85rem;background:var(--bg);border:1px dashed var(--mute);padding:10px 12px;overflow-wrap:anywhere}
+
+/* fleet */
+.map{background:var(--surface);border:1px solid var(--line);padding:10px;min-width:0;overflow-x:auto}
+.map svg{width:100%;min-width:560px;height:auto;display:block}
+.fleet{display:flex;flex-direction:column;border-top:2px solid var(--ink)}
+
+.trip .who{font-family:var(--f-display);font-weight:800;font-size:1.12rem}
+.trip .meta{font-size:.85rem;color:var(--mute)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.chip{font-size:.74rem;padding:1px 8px;border:1px solid var(--line);background:var(--surface);border-radius:3px;color:var(--mute);white-space:nowrap}
+.bar{height:8px;background:var(--sea);position:relative;margin-top:6px}
+.bar i{position:absolute;inset:0 auto 0 0;background:var(--accent)}
+.bar.late i{background:var(--crit)}
+.rk{font-family:var(--f-mono);font-size:.9rem;text-align:right}
+.esc{grid-column:1/-1;font-size:.88rem;padding:8px 10px;background:var(--crit-bg);border-left:4px solid var(--crit)}
+.esc.w{background:var(--warn-bg);border-color:var(--warn)}
+.ladder{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0;border:1px solid var(--line);background:var(--surface)}
+.ladder div{padding:12px 14px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+.ladder b{font-family:var(--f-display)}
+
+.tbl{border:1px solid var(--line);background:var(--surface);overflow-x:auto}
+.tbl table{border-collapse:collapse;width:100%;min-width:360px;font-size:.92rem}
+.tbl th,.tbl td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+.tbl th{font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
+.stack{display:flex;flex-direction:column;gap:18px;min-width:0}
+footer{margin-top:40px;padding-top:14px;border-top:1px solid var(--line)}
+@media (max-width:820px){
+  .sea,.ai,}
+@keyframes ping{0%{r:7;opacity:.9}100%{r:17;opacity:0}}
+.ping{animation:ping 1.8s ease-out infinite}
+@media (prefers-reduced-motion:reduce){.ping{animation:none;opacity:.4}}
+/* tap targets */
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+button{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.top-r{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
+.demo{font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;font-weight:700;padding:2px 8px;border:1.5px solid var(--mute);color:var(--mute);border-radius:3px}
+.state-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:auto}
+.btn.sm{padding:8px 12px}
+.trip{display:block;padding:0;border-bottom:1px solid var(--line)}
+.trip .row{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1.2fr) auto;gap:8px 18px;align-items:center;padding:14px 6px;cursor:pointer}
+.trip .row:hover{background:var(--surface)}
+.trip .esc{margin:0 6px 10px}
+.acts{display:flex;flex-wrap:wrap;gap:8px;padding:2px 6px 14px}
+.alert{width:100%;text-align:left;font:inherit;color:var(--ink);border:0;border-left:6px solid var(--crit);cursor:pointer}
+.alert:hover{filter:brightness(.97)}
+.boat{cursor:pointer;outline:none}
+.boat:focus-visible circle:nth-last-of-type(1){stroke:var(--accent);stroke-width:4}
+.step{display:block;text-align:left;font:inherit;color:var(--ink);background:transparent;border:0;border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:12px 14px;cursor:pointer}
+.step:hover{background:var(--sea)}
+.step[aria-pressed="true"]{background:var(--sea);box-shadow:inset 0 -4px 0 var(--accent)}
+.ladder{border-bottom:0;border-right:0}
+.stepmsg{margin:0;padding:12px 14px;background:var(--surface);border-left:4px solid var(--accent);font-family:var(--f-mono);font-size:.85rem;overflow-wrap:anywhere}
+.param,.rowg,.town{cursor:pointer;outline:none}.param:hover{background:var(--sea)}.rowg:hover rect:last-of-type,.town:hover text{text-decoration:underline}.param:focus-visible,.rowg:focus-visible,.town:focus-visible{outline:3px solid var(--accent);outline-offset:-3px}
+.tap{cursor:pointer}.tap:hover td{background:var(--sea)}
+.tap:focus-visible{outline:3px solid var(--accent);outline-offset:-3px}
+.tbl th:last-child{width:auto}
+#toast{position:fixed;left:50%;transform:translate(-50%,20px);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:6px;max-width:min(92vw,460px);font-weight:700;font-size:.92rem;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:50}
+#toast.on{opacity:1;transform:translate(-50%,0)}
+#instBar{position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--ink);color:var(--bg);display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px max(16px,env(safe-area-inset-right,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+#instBar .btn{background:var(--bg);color:var(--ink)}
+#instBar .x{background:transparent;border:0;color:var(--bg);font-size:1.4rem;line-height:1;padding:6px 10px;cursor:pointer}
+/* live map */
+.livewrap{display:flex;flex-direction:column;gap:10px;min-width:0}
+.maptools{display:flex;flex-wrap:wrap;gap:8px}
+#liveMap{position:relative;z-index:0;height:min(64vh,480px);min-height:320px;border:1px solid var(--line);background:var(--sea)}
+.leaflet-container{font-family:var(--f-body)}
+.leaflet-tooltip.lbl{background:var(--surface);color:var(--ink);border:1px solid var(--line);box-shadow:none;font-weight:700;font-size:12px;padding:1px 6px}
+.leaflet-tooltip.lbl:before{display:none}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--surface);color:var(--ink)}
+.leaflet-popup-content{font-size:.9rem;line-height:1.4;margin:12px 14px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:.82rem;color:var(--mute)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend .dot{width:11px;height:11px;border-radius:50%;display:inline-block}
+.legend .ln{width:22px;height:0;border-top:3px solid var(--ink);display:inline-block}
+.legend .ln.dash{border-top:2px dashed var(--ink)}
+.legend .ring{width:14px;height:14px;border-radius:50%;border:2px solid var(--mute);display:inline-block}
+details .map{border:0}
+@media (max-width:820px){
+  .trip .row{grid-template-columns:minmax(0,1fr) auto}
+  .trip .row>.c2,.trip .row>.c3{grid-column:1/-1}
+}
+</style>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0a6a78">
+<meta name="application-name" content="Baak">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">Baak</div>
+    <div class="top-r">
+      <nav aria-label="Sections">
+        <a href="#sea">Sea today</a><a href="#check">Safe AI check</a><a href="#fleet">Trips</a><a href="#track">Track my phone</a><a href="#line">Check-in options</a>
+      </nav>
+      <span class="demo">Demo data</span>
+      <button class="btn sm" type="button" id="installBtn">Install app</button>
+    </div>
+  </header>
+
+  <div id="alerts" aria-live="polite"></div>
+
+  <section id="sea">
+    <div>
+      <div class="eyebrow">GMet dashboard · <span id="gIssued"></span></div>
+      <h2>What the sea is doing</h2>
+    </div>
+    <div class="sea">
+      <div class="state" id="stateCard"></div>
+      <div class="stack">
+        <div class="chartbox" id="waveChart"></div>
+        <div class="params" id="params"></div>
+      </div>
+    </div>
+    <p class="lede" id="gSummary"></p>
+    <details id="gForm">
+      <summary>Enter today's GMet bulletin</summary>
+      <form class="form" id="gmetForm">
+        <label>Waves next 12 h, low (m)<input id="f12a" type="number" step="0.1" min="0" max="9"></label>
+        <label>Waves next 12 h, high (m)<input id="f12b" type="number" step="0.1" min="0" max="9"></label>
+        <label>Waves next 24 h, low (m)<input id="f24a" type="number" step="0.1" min="0" max="9"></label>
+        <label>Waves next 24 h, high (m)<input id="f24b" type="number" step="0.1" min="0" max="9"></label>
+        <label>Max wind 12 h (knots)<input id="g12" type="number" min="0" max="80"></label>
+        <label>Max wind 24 h (knots)<input id="g24" type="number" min="0" max="80"></label>
+        <label>Wind direction<input id="wdir" type="text" placeholder="S/SW"></label>
+        <label>Wave current (m/s)<input id="wcur" type="number" step="0.01" min="0" max="3"></label>
+        <label style="grid-column:1/-1">Weather summary from the bulletin<textarea id="wsum" rows="2"></textarea></label>
+        <div style="grid-column:1/-1;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <button class="btn" type="submit">Update dashboard</button>
+        </div>
+      </form>
+    </details>
+  </section>
+
+  <section id="check">
+    <div>
+      <div class="eyebrow">Safe AI</div>
+      <h2>Should this canoe go out?</h2>
+    </div>
+    <div class="ai">
+      <div class="panel">
+        <h3>Plan a trip</h3>
+        <div class="form">
+          <label>Boat<select id="cVessel"><option value="paddle">Paddle canoe</option><option value="motor" selected>Motor canoe</option><option value="inboard">Large inboard boat</option></select></label>
+          <label>Crew on board<input id="cCrew" type="number" min="1" max="30" value="4"></label>
+          <label>Life jackets<input id="cJack" type="number" min="0" max="30" value="2"></label>
+          <label>Hours at sea<input id="cHours" type="number" min="1" max="48" value="8"></label>
+          <label>Furthest from shore (km)<input id="cDist" type="number" min="1" max="120" value="12"></label>
+          <label>Leaving at<select id="cTime"><option value="day" selected>Daylight</option><option value="night">Night</option></select></label>
+          <label style="grid-column:1/-1">How will they check in?<select id="cComms"><option value="gps">Smartphone with GPS</option><option value="keypad" selected>Keypad phone (SMS)</option><option value="none">No phone, beach register only</option></select></label>
+        </div>
+      </div>
+      <div class="panel" id="verdict"></div>
+    </div>
+  </section>
+
+  <section id="fleet">
+    <div>
+      <div class="eyebrow">Trips</div>
+      <h2>Who is at sea, and who is late</h2>
+    </div>
+    <div class="livewrap">
+      <div class="maptools" id="mapTools"><button class="btn ghost sm" type="button" id="fitAll">Show all canoes</button></div>
+      <div id="liveMap" role="region" aria-label="Live map of canoes at sea"></div>
+      <div class="legend" id="mapLegend">
+        <span><i class="dot" style="background:var(--ok)"></i>On time</span>
+        <span><i class="dot" style="background:var(--warn)"></i>Quiet</span>
+        <span><i class="dot" style="background:var(--crit)"></i>Late or HELP</span>
+        <span><i class="ln"></i>Phone GPS trail</span>
+        <span><i class="ln dash"></i>Keypad check-in positions</span>
+        <span><i class="ring"></i>How sure the position is</span>
+        <span><i class="dot" style="background:#1565c0"></i>This phone</span>
+      </div>
+      <p class="note" id="mapNote">Smartphone canoes draw a live GPS trail. Keypad phones cannot read GPS, so every SMS check-in saves the canoe's satellite tracker position, or the cell tower position when the canoe has no tracker. Positions on this demo are simulated.</p>
+    </div>
+    <details><summary>Simple coast view (works without internet)</summary><div class="map" id="map" role="img" aria-label="Schematic of boats along the Ghana coast"></div></details>
+    <div class="fleet" id="fleetList"></div>
+    <h3>When a canoe is late</h3>
+    <div class="ladder">
+      <button class="step" type="button" data-step="0" aria-pressed="false"><span class="eyebrow">30 min late</span><br><b>Call and text</b><br>Baak rings the fisherman and every crew phone, and asks the beach register for news.</button>
+      <button class="step" type="button" data-step="1" aria-pressed="false"><span class="eyebrow">60 min late</span><br><b>Alert the beach</b><br>The chief fisherman and landing beach committee are called. Nearby canoes are asked to look.</button>
+      <button class="step" type="button" data-step="2" aria-pressed="false"><span class="eyebrow">120 min late</span><br><b>Call for rescue</b><br>Last known position and the forecast go to marine rescue partners such as the Navy and the Maritime Authority.</button>
+    </div>
+    <p class="stepmsg" id="stepMsg" hidden></p>
+  </section>
+
+  <section id="track">
+    <div>
+      <div class="eyebrow">Smartphone GPS</div>
+      <h2>Track this phone at sea</h2>
+    </div>
+    <div class="ai">
+      <div class="panel">
+        <h3>Your position</h3>
+        <div class="params" id="gpsStats"></div>
+        <p style="font-weight:700" id="gpsMsg" aria-live="polite"></p>
+        <div class="state-acts" style="margin-top:0">
+          <button class="btn" type="button" id="gpsStart">Start tracking</button>
+          <button class="btn" type="button" id="gpsStop" hidden>Stop tracking</button>
+          <button class="btn ghost" type="button" id="gpsCheck">Check in with position</button>
+          <button class="btn ghost" type="button" id="fitMe">Show me on the map</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>How it works</h3>
+        <p class="note">Tap Start tracking when the canoe leaves. The phone saves its exact GPS position every 30 seconds, or sooner when it moves 25 m, and draws the trail on the map in blue.</p>
+        <p class="note">Keep the screen on. A web app cannot read GPS once the screen locks, so leave the phone lit and dimmed in a waterproof pouch.</p>
+        <p class="note">No signal at sea is fine. Points stay on the phone and are sent when the signal returns, once the control room address is set in the file.</p>
+        <div class="acts" style="padding:0"><button class="btn ghost sm" type="button" id="gpsClear">Delete saved trail</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="line">
+    <div>
+      <div class="eyebrow">Check-in options</div>
+      <h2>Every canoe can check in</h2>
+    </div>
+    <div class="tbl"><table>
+      <thead><tr><th>Tap a row to test it</th><th>How they use Baak</th></tr></thead>
+      <tbody>
+        <tr class="tap" tabindex="0" data-comms="gps"><td><b>Smartphone</b></td><td>Large Go, Check in, Back and Help icons. Phone GPS draws a live trail on the map and sends when the signal returns.</td></tr>
+        <tr class="tap" tabindex="0" data-comms="keypad"><td><b>Keypad phone</b></td><td>SMS with single-digit replies, no data needed. Every check-in saves a satellite tracker or cell tower position on the map.</td></tr>
+        <tr class="tap" tabindex="0" data-comms="none"><td><b>No phone</b></td><td>The chief fisherman or beach committee logs departures and returns on a shared phone.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="instBar" hidden>
+  <span><b>Install Baak</b> on this phone. It opens like an app and works with a weak signal.</span>
+  <span style="display:flex;gap:8px;align-items:center"><button class="btn" type="button" id="instGo">Install</button><button class="x" type="button" id="instClose" aria-label="Dismiss">&times;</button></span>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" crossorigin="anonymous"></script>
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id)};
+  var MIN=60000, t0=Date.now();
+  var fmtT=function(t){return new Date(t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false})};
+  var ago=function(t){var m=Math.round((Date.now()-t)/MIN); if(m<1)return 'just now'; if(m<60)return m+' min ago'; return Math.floor(m/60)+' h '+(m%60)+' min ago'};
+  var toastTimer;
+  function toast(msg){var el=$('toast');el.textContent=msg;el.classList.add('on');clearTimeout(toastTimer);toastTimer=setTimeout(function(){el.classList.remove('on')},3200)}
+  function goto(id){var el=$(id);if(el)el.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth',block:'start'})}
+
+  /* ---------- GMet state ---------- */
+  var gmet={ issued:'Example bulletin', w12:[1.6,2.3], w24:[1.8,2.7], g12:22, g24:24, dir:'S/SW', cur:0.88,
+    vis:'4 – 8 km', sst:'26 – 29 °C',
+    sum:'Variably cloudy over the marine area with a 40% chance of isolated thunderstorms and rain near the west and central coast in the morning. The sea state stays rough, and tomorrow may turn dangerous.' };
+  function seaState(m){ return m<=1.4?{k:'calm',n:'Calm',p:'ok'}: m<=2.4?{k:'rough',n:'Rough',p:'warn'}:{k:'danger',n:'Dangerous',p:'crit'}; }
+
+  function renderGmet(){
+    var s12=seaState(gmet.w12[1]), peak=Math.max(gmet.w12[1],gmet.w24[1]), sp=seaState(peak);
+    $('gIssued').textContent=gmet.issued;
+    var c=$('stateCard'); c.className='state '+s12.k;
+    c.innerHTML='<span class="eyebrow">State of the sea, next 12 hours</span><div class="big">'+s12.n+'</div>'+
+      '<div class="mono">Waves '+gmet.w12[0].toFixed(1)+' to '+gmet.w12[1].toFixed(1)+' m</div>'+
+      '<div>'+(sp.k!==s12.k?'<span class="pill '+sp.p+'">Next 24 h peak: '+sp.n+' at '+peak.toFixed(1)+' m</span>':'<span class="pill '+sp.p+'">Same for the next 24 h</span>')+'</div>'+
+      '<p style="font-size:.92rem">'+(s12.k==='danger'?'Small canoes should stay ashore.':s12.k==='rough'?'Small canoes stay near shore. Check in often.':'Normal fishing. Keep checking in.')+'</p>'+
+      '<div class="state-acts"><button class="btn ghost" type="button" data-go="gForm">Update bulletin</button><button class="btn ghost" type="button" data-go="check">Safe AI check</button></div>';
+    $('params').innerHTML=[['Wind',gmet.dir+' · up to '+gmet.g12+' kt (12 h), '+gmet.g24+' kt (24 h)'],['Wave current',gmet.cur.toFixed(2)+' m/s'],['Visibility',gmet.vis],['Sea temperature',gmet.sst]]
+      .map(function(r){return '<div class="param" role="button" tabindex="0" data-k="'+r[0]+'" data-v="'+r[1]+'"><div class="k">'+r[0]+'</div><div class="v">'+r[1]+'</div></div>'}).join('');
+    $('gSummary').textContent=gmet.sum;
+    chart();
+  }
+  function chart(){
+    var X=function(m){return 78+m/3.5*420}, rows=[['Next 12 h',gmet.w12,52],['Next 24 h',gmet.w24,102]];
+    var svg='<svg viewBox="0 0 520 168" role="img" aria-label="Forecast wave height ranges against calm, rough and dangerous bands">';
+    svg+='<rect x="'+X(0)+'" y="26" width="'+(X(1.45)-X(0))+'" height="100" fill="var(--ok-bg)"/>';
+    svg+='<rect x="'+X(1.45)+'" y="26" width="'+(X(2.5)-X(1.45))+'" height="100" fill="var(--warn-bg)"/>';
+    svg+='<rect x="'+X(2.5)+'" y="26" width="'+(X(3.5)-X(2.5))+'" height="100" fill="var(--crit-bg)"/>';
+    svg+='<text class="svg-k" x="'+X(0.72)+'" y="18" text-anchor="middle">Calm</text><text class="svg-k" x="'+X(1.97)+'" y="18" text-anchor="middle">Rough</text><text class="svg-k" x="'+X(3)+'" y="18" text-anchor="middle">Dangerous</text>';
+    for(var m=0;m<=3.5;m+=0.5){svg+='<line x1="'+X(m)+'" x2="'+X(m)+'" y1="26" y2="126" stroke="var(--line)" stroke-width="1"/><text class="svg-t" x="'+X(m)+'" y="144" text-anchor="middle">'+m.toFixed(1)+'</text>';}
+    svg+='<text class="svg-t" x="'+X(1.75)+'" y="162" text-anchor="middle">Significant wave height, metres</text>';
+    rows.forEach(function(r){
+      var a=X(r[1][0]), b=X(Math.min(r[1][1],3.5));
+      svg+='<g class="rowg" role="button" tabindex="0" data-r="'+r[0]+'" data-lo="'+r[1][0]+'" data-hi="'+r[1][1]+'"><rect x="0" y="'+(r[2]-20)+'" width="520" height="40" fill="transparent"/>';
+      svg+='<text class="svg-k" x="8" y="'+(r[2]+4)+'">'+r[0]+'</text>';
+      svg+='<rect x="'+a+'" y="'+(r[2]-9)+'" width="'+Math.max(4,b-a)+'" height="18" fill="var(--ink)"/>';
+      svg+='<circle cx="'+b+'" cy="'+r[2]+'" r="6" fill="var(--ink)" stroke="var(--surface)" stroke-width="2"/>';
+      var lx=b+10, anchor='start'; if(lx>440){lx=a-8;anchor='end'}
+      svg+='<text class="svg-t" x="'+lx+'" y="'+(r[2]+4)+'" text-anchor="'+anchor+'">'+r[1][0].toFixed(1)+' – '+r[1][1].toFixed(1)+'</text></g>';
+    });
+    $('waveChart').innerHTML=svg+'</svg>';
+  }
+
+  /* ---------- Safe AI ---------- */
+  var VESSEL={paddle:{n:'Paddle canoe',m:1.3},motor:{n:'Motor canoe',m:1.0},inboard:{n:'Large inboard boat',m:0.75}};
+  var COMMS={gps:{n:'Smartphone GPS',p:0},keypad:{n:'Keypad phone',p:6},none:{n:'Beach register',p:12}};
+  var VIA={gps:'GPS ping',keypad:'SMS "2"',none:'Beach register'};
+  function safeAI(t){
+    var long=t.hours>12, wave=long?Math.max(gmet.w12[1],gmet.w24[1]):gmet.w12[1], gust=long?Math.max(gmet.g12,gmet.g24):gmet.g12;
+    var wp=wave<=1.0?0:wave<1.5?10:wave<2.5?25+(wave-1.5)*30:60+Math.min(20,(wave-2.5)*20);
+    var gp=gust<=15?0:gust<=22?15:gust<=28?30:45;
+    var vm=VESSEL[t.vessel].m, why=[], total=0;
+    var wS=Math.round(wp*vm), gS=Math.round(gp*vm);
+    if(wS>0)why.push([wS,'Waves up to '+wave.toFixed(1)+' m forecast'+(vm>1?' and a paddle canoe sits low in the water':'')]);
+    if(gS>0)why.push([gS,'Winds gusting to '+gust+' knots']);
+    var d=Math.min(15,Math.round(t.dist/3)); if(d>=3)why.push([d,t.dist+' km from shore is a long way to be rescued']);
+    var n=t.night?8:0; if(n)why.push([n,'Leaving at night']);
+    var j=t.crew>t.jack?10+Math.min(10,(t.crew-t.jack)*2):0; if(j)why.push([j,(t.crew-t.jack)+' crew without a life jacket']);
+    var cm=COMMS[t.comms].p; if(cm)why.push([cm,{keypad:'Keypad phone has no GPS, so position is only known at check-in',none:'No phone, so nobody can call for help from the water'}[t.comms]]);
+    var h=t.hours>10?5:0; if(h)why.push([h,'A long trip of '+t.hours+' hours']);
+    var x=t.extra||0; if(x)why.push([x,t.extraWhy]);
+    total=wS+gS+d+n+j+cm+h+x; total=Math.max(0,Math.min(100,Math.round(total)));
+    var lv=total<35?'go':total<60?'caution':'stop';
+    why.sort(function(a,b){return b[0]-a[0]});
+    return {score:total,level:lv,why:why,wave:wave,gust:gust};
+  }
+  var MSG={go:'Good to go. Tell Baak when you leave and when you are back.',
+           caution:'Go only if you stay close to shore, carry a life jacket for everyone and check in every 2 hours.',
+           stop:'Do not go out today. Wait for the next GMet warning.'};
+  var LVN={go:'Go',caution:'Caution',stop:'No-go'};
+  var COLW={go:'GREEN',caution:'YELLOW',stop:'RED'};
+  function smsText(r){ return 'BAAK: '+COLW[r.level]+'. Waves '+gmet.w12[0].toFixed(1)+'-'+gmet.w12[1].toFixed(1)+'m. '+(r.level==='go'?'Safe to fish.':r.level==='caution'?'Stay near shore.':'Stay ashore.')+' Text 1 when you leave, 2 to check in, 3 when back.'; }
+  function readCheck(){
+    return {vessel:$('cVessel').value,crew:+$('cCrew').value||1,jack:+$('cJack').value||0,hours:+$('cHours').value||1,dist:+$('cDist').value||1,night:$('cTime').value==='night',comms:$('cComms').value};
+  }
+  function renderCheck(){
+    var r=safeAI(readCheck());
+    var why=r.why.length?r.why.map(function(w){return '<li><span class="pts">+'+w[0]+'</span><span>'+w[1]+'</span></li>'}).join(''):'<li><span>Nothing is adding risk right now.</span></li>';
+    $('verdict').innerHTML='<div class="verdict"><div class="score">'+r.score+'</div><div><div class="eyebrow">Risk out of 100</div><div class="lvl '+r.level+'">'+LVN[r.level]+'</div></div></div>'+
+      '<div class="meter" aria-hidden="true"><i style="left:'+r.score+'%"></i></div>'+
+      '<p style="font-weight:700">'+MSG[r.level]+'</p><h3>What is driving the score</h3><ul class="why">'+why+'</ul>'+
+      '<div><div class="eyebrow">Text sent to a keypad phone</div><div class="sms">'+smsText(r)+'</div>'+
+      '<div class="acts" style="padding:10px 0 0"><button class="btn ghost" type="button" id="copySms">Copy text</button><button class="btn ghost" type="button" id="resetCheck">Reset</button></div></div>';
+  }
+
+  /* ---------- Trips ---------- */
+  var COMM_X={'Axim':.08,'Takoradi':.24,'Elmina':.40,'Winneba':.55,'Jamestown':.68,'Tema':.81,'Keta':.94};
+  var trips=[
+    {id:1,name:'Kwesi Mensah',town:'Elmina',vessel:'motor',crew:3,jack:3,comms:'gps',status:'sea',dep:-300,exp:120,dist:14,last:-6,via:'GPS ping'},
+    {id:2,name:'Ama Quaye',town:'Axim',vessel:'paddle',crew:2,jack:1,comms:'keypad',tracker:'cell',status:'sea',dep:-540,exp:-70,dist:7,last:-210,via:'SMS "2"'},
+    {id:3,name:'Kofi Agbeko',town:'Keta',vessel:'motor',crew:4,jack:4,comms:'keypad',tracker:'sat',status:'sea',dep:-420,exp:45,dist:9,last:-50,via:'SMS "2"'},
+    {id:4,name:'Nii Armah',town:'Jamestown',vessel:'inboard',crew:8,jack:8,comms:'gps',status:'returned',dep:-600,exp:-120,dist:22,last:-75,via:'GPS ping'},
+    {id:5,name:'Yaw Boateng',town:'Winneba',vessel:'paddle',crew:2,jack:2,comms:'none',status:'planned',dep:60,exp:540,dist:5,last:null,via:''},
+    {id:6,name:'Efua Essien',town:'Takoradi',vessel:'motor',crew:5,jack:3,comms:'keypad',tracker:'sat',status:'sea',dep:-240,exp:190,dist:18,last:-95,via:'SMS "2"'}
+  ];
+  trips.forEach(function(t){['dep','exp','last'].forEach(function(k){ if(t[k]!==null) t[k]=t0+t[k]*MIN; })});
+  var helpFlag={}, openTrip={}, byId=function(id){return trips.filter(function(t){return t.id===+id})[0]};
+
+  /* ---------- Positions and live map ---------- */
+  /* To send phone GPS points to a control room, put your server address here, for example 'https://example.com/api/positions'.
+     The phone POSTs {device, points:[{t,lat,lng,acc,spd,hdg}]}. Left empty, points stay on the phone. */
+  var SYNC_URL='';
+  var COORD={'Axim':[4.867,-2.241],'Takoradi':[4.885,-1.755],'Elmina':[5.085,-1.350],'Winneba':[5.351,-0.623],'Jamestown':[5.530,-0.213],'Tema':[5.670,-0.017],'Keta':[5.917,0.983]};
+  var SRC={gps:{n:'Phone GPS',note:'exact, within a few metres'},sat:{n:'Satellite tracker',note:'within about 20 m'},cell:{n:'Cell tower',note:'rough, within about 3 km'}};
+  var ACC={gps:8,sat:20,cell:3000};
+  var css=function(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim()};
+  function srcOf(t){return t.comms==='gps'?'gps':t.comms==='keypad'?(t.tracker==='sat'?'sat':'cell'):null}
+    function rnd(a){var x=Math.sin(a*12.9898+78.233)*43758.5453;return x-Math.floor(x)}
+  function distKm(a,b){var R=6371,r=Math.PI/180,dl=(b.lat-a.lat)*r,dn=(b.lng-a.lng)*r,x=Math.sin(dl/2)*Math.sin(dl/2)+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dn/2)*Math.sin(dn/2);return 2*R*Math.asin(Math.sqrt(x))}
+  /* Demo positions: out from the home beach to the trip distance, then drifting along the coast. */
+  function posAt(t,time){
+    var base=COORD[t.town], e=Math.max(0,(time-t.dep)/MIN), out=Math.min(1,e/60), sd=t.id*1.7;
+    var off=t.dist*out*(1+0.05*Math.sin(e/25+sd)), side=(t.id%2?1:-1)*(2.2*out+0.9*Math.sin(e/50+sd));
+    var lat=base[0]-off/111, lng=base[1]+side/(111*Math.cos(lat*Math.PI/180));
+    return [lat,lng];
+  }
+  function mkFix(t,time){
+    var k=srcOf(t); if(!k)return null;
+    var p=posAt(t,time), a=ACC[k], j=a/111000*0.5, i=t.id+Math.round(time/MIN);
+    return {t:time,lat:p[0]+(rnd(i)-.5)*2*j,lng:p[1]+(rnd(i+.5)-.5)*2*j,acc:a,src:k};
+  }
+  function addFix(t,time){var f=mkFix(t,time);if(!f)return;t.track.push(f);if(t.track.length>1500)t.track.shift();t.fix=f}
+  function seedTrack(t){
+    t.track=[];t.fix=null;
+    if(t.status!=='sea'||!srcOf(t))return;
+    var i;
+    if(srcOf(t)==='gps'){for(i=t.dep;i<=t.last;i+=5*MIN)addFix(t,i)}
+    else{addFix(t,t.dep);for(i=t.dep+120*MIN;i<t.last-30*MIN;i+=120*MIN)addFix(t,i)}
+    addFix(t,t.last);
+  }
+  trips.forEach(seedTrack);
+
+  var LM=null, reg={}, fitted=false, meL={};
+  function initMap(){
+    if(!window.L){$('liveMap').hidden=true;$('mapTools').hidden=true;$('mapLegend').hidden=true;$('mapNote').textContent='The live map needs an internet connection the first time it opens. The simple coast view below still works.';return}
+    LM=L.map('liveMap').setView([5.1,-1.0],8);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:17,crossOrigin:true,attribution:'&copy; OpenStreetMap contributors'}).addTo(LM);
+    Object.keys(COORD).forEach(function(n){L.circleMarker(COORD[n],{radius:4,weight:2,color:'#0b2a30',fillColor:'#ffffff',fillOpacity:1}).bindTooltip(n,{direction:'top',offset:[0,-4]}).addTo(LM)});
+    LM.on('popupopen',function(e){var el=e.popup.getElement(), b=el&&el.querySelector('[data-open]');if(b)b.addEventListener('click',function(){LM.closePopup();focusTrip(b.getAttribute('data-open'),true)})});
+  }
+  function popupHtml(t){
+    var f=t.fix, h='<b>'+t.name+'</b><br>'+t.town+' · '+VESSEL[t.vessel].n+' · '+t.crew+' crew<br>';
+    if(f)h+='Position '+ago(f.t)+'<br>'+SRC[f.src].n+', '+SRC[f.src].note+'<br><span class="mono">'+f.lat.toFixed(4)+', '+f.lng.toFixed(4)+'</span><br>';
+    return h+'<button class="btn sm" type="button" data-open="'+t.id+'" style="margin-top:8px">Open trip</button>';
+  }
+  function statKey(t,s){return helpFlag[t.id]||s.overdue>0?'crit':s.silent>0?'warn':'ok'}
+  function renderLive(){
+    if(!LM)return;
+    var pts=[];
+    trips.forEach(function(t){
+      var r=reg[t.id];
+      if(t.status!=='sea'||!t.fix){if(r){LM.removeLayer(r.g);delete reg[t.id]}return}
+      var s=tripState(t), col=css('--'+statKey(t,s)), f=t.fix, ll=[f.lat,f.lng], gps=t.comms==='gps', big=f.acc>=500;
+      if(!r){
+        r={g:L.layerGroup().addTo(LM),trail:L.polyline([],{opacity:.9}),pts:L.layerGroup(),acc:L.circle(ll,{radius:f.acc,weight:1}),dot:L.circleMarker(ll,{radius:9,weight:3,fillOpacity:1})};
+        r.g.addLayer(r.acc);r.g.addLayer(r.trail);r.g.addLayer(r.pts);r.g.addLayer(r.dot);
+        r.dot.bindTooltip(t.name.split(' ')[0],{permanent:true,direction:'right',offset:[12,0],className:'lbl'});
+        r.dot.bindPopup(function(){return popupHtml(t)});
+        reg[t.id]=r;
+      }
+      r.trail.setLatLngs(t.track.map(function(p){return [p.lat,p.lng]})).setStyle({color:col,weight:gps?3:2,dashArray:gps?null:'4 6'});
+      r.pts.clearLayers();
+      if(!gps)t.track.forEach(function(p){L.circleMarker([p.lat,p.lng],{radius:4,weight:2,color:col,fillColor:css('--surface'),fillOpacity:1}).addTo(r.pts)});
+      r.acc.setLatLng(ll).setRadius(f.acc).setStyle({color:col,fillColor:col,opacity:big?.8:0,fillOpacity:big?.15:0});
+      r.dot.setLatLng(ll).setStyle({color:css('--surface'),fillColor:col});r.dot.bringToFront();
+      pts.push(ll);
+    });
+    if(!fitted&&pts.length){LM.fitBounds(L.latLngBounds(pts).pad(0.3),{maxZoom:11});fitted=true}
+  }
+  function showOnMap(t){
+    if(!LM||!t.fix){toast('No position saved yet for '+t.name);return}
+    goto('liveMap');LM.flyTo([t.fix.lat,t.fix.lng],12,{duration:.8});
+    if(reg[t.id])setTimeout(function(){reg[t.id].dot.openPopup()},900);
+  }
+  function fitAll(){
+    if(!LM)return;var pts=[];Object.keys(reg).forEach(function(k){pts.push(reg[k].dot.getLatLng())});
+    var l=me.last||me.pts[me.pts.length-1];if(l)pts.push([l.lat,l.lng]);
+    if(pts.length)LM.fitBounds(L.latLngBounds(pts).pad(0.3),{maxZoom:11});
+  }
+
+  /* ---------- This phone's GPS ---------- */
+  var me={on:false,id:null,pts:[],queue:[],last:null,wake:null,err:'',sending:false};
+  function ls(k,v){try{if(v===undefined)return JSON.parse(localStorage.getItem(k)||'null');localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}}
+  var DEV=ls('baakDev');if(!DEV){DEV='p'+Math.random().toString(36).slice(2,10);ls('baakDev',DEV)}
+  me.pts=ls('baakTrail')||[];me.queue=ls('baakQueue')||[];
+  function savePt(pt){
+    me.pts.push(pt);me.queue.push(pt);
+    if(me.pts.length>2000)me.pts.shift();if(me.queue.length>2000)me.queue.shift();
+    ls('baakTrail',me.pts);ls('baakQueue',me.queue);flush();
+  }
+  function onPos(p,force){
+    var c=p.coords, pt={t:p.timestamp||Date.now(),lat:+c.latitude.toFixed(6),lng:+c.longitude.toFixed(6),acc:Math.round(c.accuracy||0),spd:c.speed==null?null:+(c.speed*3.6).toFixed(1),hdg:(c.heading==null||isNaN(c.heading))?null:Math.round(c.heading)};
+    if(force)pt.ci=1;
+    me.last=pt;me.err='';
+    var prev=me.pts[me.pts.length-1];
+    if(force||(pt.acc<=150&&(!prev||pt.t-prev.t>=30000||distKm(prev,pt)>=0.025)))savePt(pt);
+    renderMe();
+  }
+  function onErr(e){
+    me.err=e.code===1?'Location is blocked. In Chrome, tap the lock icon by the address, then Permissions, and allow Location.':e.code===2?'No GPS signal yet. Hold the phone where it can see the sky.':'GPS is slow to answer. Keep the phone awake and wait.';
+    if(e.code===1)stopTrack();
+    renderMe();
+  }
+  function lock(){try{if(navigator.wakeLock&&me.on){navigator.wakeLock.request('screen').then(function(w){me.wake=w;w.addEventListener('release',function(){me.wake=null})}).catch(function(){})}}catch(e){}}
+  document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&me.on&&!me.wake)lock()});
+  function startTrack(){
+    if(!navigator.geolocation){me.err='This browser cannot read GPS.';renderMe();return}
+    if(me.on)return;
+    me.on=true;me.err='';meL.centred=false;ls('baakOn','1');
+    me.id=navigator.geolocation.watchPosition(function(p){onPos(p,false)},onErr,{enableHighAccuracy:true,maximumAge:0,timeout:30000});
+    lock();renderMe();
+  }
+  function stopTrack(){
+    if(me.id!==null&&navigator.geolocation)navigator.geolocation.clearWatch(me.id);
+    me.id=null;me.on=false;ls('baakOn','0');
+    try{if(me.wake)me.wake.release()}catch(e){}
+    me.wake=null;renderMe();
+  }
+  function checkInPhone(){
+    if(!navigator.geolocation){me.err='This browser cannot read GPS.';renderMe();return}
+    if(me.on&&me.last&&Date.now()-me.last.t<20000){var c=JSON.parse(JSON.stringify(me.last));c.ci=1;savePt(c);renderMe();toast('Check-in saved with your position');return}
+    toast('Reading GPS...');
+    navigator.geolocation.getCurrentPosition(function(p){onPos(p,true);toast('Check-in saved with your position')},onErr,{enableHighAccuracy:true,maximumAge:0,timeout:25000});
+  }
+  function flush(){
+    if(!SYNC_URL||me.sending||!me.queue.length||!navigator.onLine)return;
+    me.sending=true;var batch=me.queue.slice(0,100);
+    fetch(SYNC_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({device:DEV,points:batch})}).then(function(r){
+      if(!r.ok)throw 0;
+      me.queue=me.queue.slice(batch.length);ls('baakQueue',me.queue);me.sending=false;renderMe();if(me.queue.length)flush();
+    }).catch(function(){me.sending=false;renderMe()});
+  }
+  window.addEventListener('online',flush);
+  function renderMe(){
+    var p=me.last||me.pts[me.pts.length-1], ll=p?[p.lat,p.lng]:null;
+    var cells=[['Latitude',p?p.lat.toFixed(5):'none yet'],['Longitude',p?p.lng.toFixed(5):'none yet'],['Accuracy',p?'within '+p.acc+' m':'none yet'],['Speed',p&&p.spd!=null?p.spd+' km/h':'none yet'],['Saved points',String(me.pts.length)],['Sent to control room',SYNC_URL?(me.queue.length?me.queue.length+' waiting':'All sent'):'Not connected. Kept on this phone.']];
+    $('gpsStats').innerHTML=cells.map(function(c){return '<div><div class="k">'+c[0]+'</div><div class="v">'+c[1]+'</div></div>'}).join('');
+    $('gpsMsg').textContent=me.err||(me.on?(me.last?'Tracking is on. Keep this screen awake.':'Looking for GPS. Hold the phone where it can see the sky.'):'Tracking is off.');
+    $('gpsStart').hidden=me.on;$('gpsStop').hidden=!me.on;
+    if(!LM||!ll)return;
+    if(!meL.g){
+      meL.g=L.layerGroup().addTo(LM);
+      meL.trail=L.polyline([],{weight:4,color:'#1565c0',opacity:.9}).addTo(meL.g);
+      meL.acc=L.circle(ll,{radius:p.acc||10,weight:1,color:'#1565c0',fillColor:'#1565c0',fillOpacity:.15}).addTo(meL.g);
+      meL.dot=L.circleMarker(ll,{radius:9,weight:3,color:'#ffffff',fillColor:'#1565c0',fillOpacity:1}).bindTooltip('You',{permanent:true,direction:'right',offset:[12,0],className:'lbl'}).addTo(meL.g);
+    }
+    meL.trail.setLatLngs(me.pts.map(function(q){return [q.lat,q.lng]}));
+    meL.acc.setLatLng(ll).setRadius(Math.max(p.acc||10,5));meL.dot.setLatLng(ll);meL.dot.bringToFront();
+    if(me.on&&me.last&&!meL.centred){LM.setView(ll,14);meL.centred=true}
+  }
+  function showMe(){
+    var p=me.last||me.pts[me.pts.length-1];
+    if(!LM){toast('The map is not loaded. Check your internet connection.');return}
+    if(!p){toast('Start tracking first');return}
+    goto('liveMap');LM.flyTo([p.lat,p.lng],14,{duration:.8});
+  }
+
+  function tripState(t){
+    var now=Date.now(), o={};
+    o.hours=Math.max(1,Math.round((t.exp-t.dep)/60/MIN));
+    o.overdue=t.status==='sea'?Math.max(0,Math.round((now-t.exp)/MIN)):0;
+    var limit=t.comms==='gps'?20:150;
+    o.silent=t.status==='sea'&&t.last!==null&&(now-t.last)/MIN>limit?Math.round((now-t.last)/MIN):0;
+    var extra=0, why='';
+    if(o.overdue>0){extra+=Math.min(40,20+Math.round(o.overdue/3)); why='Back '+o.overdue+' min later than planned'}
+    if(o.silent>0){extra+=10; why=why?why+' and no check-in for '+Math.round(o.silent/60*10)/10+' h':'No check-in for '+Math.round(o.silent/60*10)/10+' h'}
+    var r=safeAI({vessel:t.vessel,crew:t.crew,jack:t.jack,hours:o.hours,dist:t.dist,night:false,comms:t.comms,extra:extra,extraWhy:why});
+    o.r=r; o.stage=o.overdue>=120?3:o.overdue>=60?2:o.overdue>=30?1:0; if(helpFlag[t.id])o.stage=3;
+    return o;
+  }
+  var STAGE={1:'Baak is calling and texting the fisherman and crew.',2:'Chief fisherman and landing beach committee alerted. Nearby canoes asked to look.',3:'Rescue partners alerted with the last known position.'};
+
+  function actsFor(t){
+    var b=function(a,l,c){return '<button class="btn'+(c||' ghost')+'" type="button" data-act="'+a+'" data-id="'+t.id+'">'+l+'</button>'};
+    var h='';
+    if(t.status==='sea'){h+=b('checkin','Check in now','')+b('map','Show on map')+b('back','Back safe')+b('call','Call')+(helpFlag[t.id]?b('clear','Clear HELP'):b('help','Send HELP'));}
+    else if(t.status==='planned'){h+=b('start','Start trip','')+b('call','Call');}
+    else {h+=b('start','Go out again','')+b('call','Call');}
+    return h+b('test','Test in Safe AI');
+  }
+  function renderFleet(){
+    var now=Date.now(), html='', alerts='';
+    trips.forEach(function(t){
+      var s=tripState(t), pct=0, open=!!openTrip[t.id];
+      if(t.status==='sea') pct=Math.max(0,Math.min(100,(now-t.dep)/(t.exp-t.dep)*100));
+      var pill=t.status==='returned'?'<span class="pill ok">Back safe</span>':t.status==='planned'?'<span class="pill mute">Not left yet</span>':
+        (helpFlag[t.id]?'<span class="pill crit">HELP</span>':s.overdue>0?'<span class="pill crit">'+s.overdue+' min late</span>':s.silent>0?'<span class="pill warn">Quiet</span>':'<span class="pill ok">At sea</span>');
+      var times=t.status==='planned'?'Plans to leave '+fmtT(t.dep)+'<br><span class="meta">Back by '+fmtT(t.exp)+'</span>':
+        t.status==='returned'?'Left '+fmtT(t.dep)+'<br><span class="meta">Home '+fmtT(t.last)+'</span>':
+        'Left '+fmtT(t.dep)+' · due '+fmtT(t.exp)+'<div class="bar'+(s.overdue>0?' late':'')+'"><i style="width:'+pct+'%"></i></div><span class="meta">Last check-in '+(t.last?ago(t.last)+' ('+t.via+')':'none')+'</span>';
+      var esc='';
+      if(s.stage>0&&t.status==='sea'){esc='<div class="esc'+(s.stage<3?' w':'')+'"><b>'+(helpFlag[t.id]?'Help pressed. ':'Step '+s.stage+' of 3. ')+'</b>'+STAGE[s.stage]+'</div>';
+        alerts+='<button class="alert'+(s.stage<3?' w':'')+'" type="button" data-open="'+t.id+'"><b>'+t.name+', '+t.town+'</b><span>'+(helpFlag[t.id]?'pressed HELP. ':s.overdue+' min overdue. ')+STAGE[s.stage]+'</span></button>';}
+      html+='<article class="trip" id="trip-'+t.id+'"><div class="row" role="button" tabindex="0" aria-expanded="'+open+'" data-id="'+t.id+'"><div><div class="who">'+t.name+'</div><div class="meta">'+t.town+'</div><div class="chips"><span class="chip">'+VESSEL[t.vessel].n+'</span><span class="chip">'+t.crew+' crew</span><span class="chip">'+COMMS[t.comms].n+'</span>'+(t.comms==='keypad'?'<span class="chip">'+SRC[srcOf(t)].n+'</span>':'')+'</div></div>'+
+        '<div class="c2">'+pill+'<div class="meta" style="margin-top:6px">'+t.dist+' km out</div></div>'+
+        '<div class="c3">'+times+'</div>'+
+        '<div class="rk"><div class="eyebrow">Risk</div><b>'+s.r.score+'</b> <span class="lvl '+s.r.level+'" style="font-size:.9rem">'+LVN[s.r.level]+'</span> <span aria-hidden="true">'+(open?'▴':'▾')+'</span></div></div>'+esc+
+        '<div class="acts"'+(open?'':' hidden')+'>'+actsFor(t)+'</div></article>';
+    });
+    $('fleetList').innerHTML=html; $('alerts').innerHTML=alerts;
+    renderMap();renderLive();
+  }
+  function renderMap(){
+    var W=720,H=250,L=46,R=30, X=function(f){return L+f*(W-L-R)}, Y=function(km){return 64+Math.min(km,30)/30*160};
+    var s='<svg viewBox="0 0 '+W+' '+H+'"><rect x="0" y="0" width="'+W+'" height="48" fill="var(--line)"/><rect x="0" y="48" width="'+W+'" height="'+(H-48)+'" fill="var(--sea)"/>';
+    s+='<path d="M0 48 H'+W+'" stroke="var(--ink)" stroke-width="2"/><text class="svg-t" x="8" y="24">LAND</text><text class="svg-t" x="'+(W-8)+'" y="24" text-anchor="end">West ← coast → East</text>';
+    [10,20,30].forEach(function(k){s+='<line x1="0" x2="'+W+'" y1="'+Y(k)+'" y2="'+Y(k)+'" stroke="var(--surface)" stroke-dasharray="3 5" opacity=".7"/><text class="svg-t" x="'+(W-4)+'" y="'+(Y(k)-4)+'" text-anchor="end">'+k+' km</text>'});
+    Object.keys(COMM_X).forEach(function(n){var x=X(COMM_X[n]);s+='<g class="town" role="button" tabindex="0" data-town="'+n+'" aria-label="'+n+' canoes"><rect x="'+(x-30)+'" y="26" width="60" height="30" fill="transparent"/><circle cx="'+x+'" cy="48" r="4" fill="var(--ink)"/><text class="svg-k" x="'+x+'" y="40" text-anchor="middle" style="font-size:11px">'+n+'</text></g>'});
+    trips.forEach(function(t,i){
+      var x=X(COMM_X[t.town])+(i%2?10:-10), st=tripState(t), col, y;
+      if(t.status==='sea'){ y=Y(t.dist); col=helpFlag[t.id]||st.overdue>0?'var(--crit)':st.silent>0?'var(--warn)':'var(--ok)';
+        s+='<g class="boat" tabindex="0" role="button" data-id="'+t.id+'" aria-label="'+t.name+', '+t.dist+' km out">';
+        if(helpFlag[t.id]||st.overdue>0) s+='<circle class="ping" cx="'+x+'" cy="'+y+'" r="7" fill="none" stroke="var(--crit)" stroke-width="2"/>';
+        s+='<line x1="'+x+'" x2="'+X(COMM_X[t.town])+'" y1="'+y+'" y2="52" stroke="'+col+'" stroke-width="1" stroke-dasharray="2 3" opacity=".7"/>';
+        s+='<circle cx="'+x+'" cy="'+y+'" r="16" fill="transparent"/><circle cx="'+x+'" cy="'+y+'" r="7" fill="'+col+'" stroke="var(--surface)" stroke-width="2"/><text class="svg-k" x="'+x+'" y="'+(y+22)+'" text-anchor="middle" style="font-size:11px">'+t.name.split(' ')[0]+'</text></g>';
+      }
+    });
+    $('map').innerHTML=s+'</svg>';
+  }
+  function focusTrip(id,open){
+    if(open!==undefined)openTrip[id]=open; renderFleet();
+    var el=$('trip-'+id); if(el){el.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth',block:'center'});}
+  }
+  function act(a,id){
+    var t=byId(id), now=Date.now();
+    if(a==='checkin'){t.last=now;t.via=VIA[t.comms];addFix(t,now);toast(t.name+' checked in at '+fmtT(now))}
+    else if(a==='back'){t.status='returned';t.last=now;helpFlag[t.id]=false;toast(t.name+' is back safe')}
+    else if(a==='call'){toast('Calling '+t.name+' ('+COMMS[t.comms].n+')')}
+    else if(a==='help'){helpFlag[t.id]=true;t.last=now;addFix(t,now);toast('HELP alert raised for '+t.name)}
+    else if(a==='clear'){helpFlag[t.id]=false;toast('HELP cleared for '+t.name)}
+    else if(a==='start'){var h=Math.max(4,tripState(t).hours);t.status='sea';t.dep=now;t.exp=now+h*60*MIN;t.last=now;t.via=VIA[t.comms];t.track=[];addFix(t,now);toast(t.name+' is out. Back by '+fmtT(t.exp))}
+    else if(a==='map'){showOnMap(t);return}
+    else if(a==='test'){
+      $('cVessel').value=t.vessel;$('cCrew').value=t.crew;$('cJack').value=t.jack;$('cHours').value=tripState(t).hours;$('cDist').value=t.dist;$('cComms').value=t.comms;
+      renderCheck();goto('check');toast('Safe AI check loaded for '+t.name);return;
+    }
+    renderFleet();
+  }
+
+  /* ---------- escalation steps ---------- */
+  var STEPMSG=[
+    'To the fisherman and every crew phone: "BAAK: Your canoe is 30 minutes late. Press 2 if you are safe."',
+    'To the chief fisherman and beach committee: "BAAK: A canoe from your beach is 60 minutes late, last seen 12 km out. Please check and tell nearby canoes."',
+    'To rescue partners: "BAAK: Canoe overdue 120 minutes. Last known position, its source and a map link, plus the 24 h forecast, attached. 4 crew."'
+  ];
+
+  /* ---------- install ---------- */
+  var deferred=null;
+  var standalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone;
+  function showInstall(on){$('installBtn').hidden=!!standalone;$('instBar').hidden=!on||!!standalone||sessionStorageDismissed()}
+  function sessionStorageDismissed(){try{return sessionStorage.getItem('baakBar')==='1'}catch(e){return false}}
+  function install(){
+    if(deferred){deferred.prompt();deferred.userChoice.then(function(c){deferred=null;if(c.outcome==='accepted')toast('Installing Baak');$('instBar').hidden=true})}
+    else if(standalone){toast('Baak is already installed')}
+    else{toast(/iphone|ipad|ipod/i.test(navigator.userAgent)?'On iPhone, tap Share, then Add to Home Screen':'In Chrome, open the menu and tap Install app or Add to Home screen')}
+  }
+  window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();deferred=e;showInstall(true)});
+  window.addEventListener('appinstalled',function(){deferred=null;standalone=true;showInstall(false);toast('Baak installed')});
+  if('serviceWorker' in navigator&&/^https?:$/.test(location.protocol)){navigator.serviceWorker.register('sw.js').catch(function(){})}
+
+  /* ---------- wiring ---------- */
+  function fillForm(){
+    $('f12a').value=gmet.w12[0];$('f12b').value=gmet.w12[1];$('f24a').value=gmet.w24[0];$('f24b').value=gmet.w24[1];
+    $('g12').value=gmet.g12;$('g24').value=gmet.g24;$('wdir').value=gmet.dir;$('wcur').value=gmet.cur;$('wsum').value=gmet.sum;
+  }
+  $('gmetForm').addEventListener('submit',function(e){
+    e.preventDefault();
+    var a=+$('f12a').value,b=+$('f12b').value,c=+$('f24a').value,d=+$('f24b').value;
+    gmet.w12=[Math.min(a,b),Math.max(a,b)];gmet.w24=[Math.min(c,d),Math.max(c,d)];
+    gmet.g12=+$('g12').value||0;gmet.g24=+$('g24').value||0;gmet.dir=$('wdir').value||gmet.dir;gmet.cur=+$('wcur').value||0;
+    gmet.sum=$('wsum').value||gmet.sum;gmet.issued='Entered by you at '+fmtT(Date.now());
+    renderGmet();renderCheck();renderFleet();toast('Dashboard updated');goto('sea');
+  });
+  ['cVessel','cCrew','cJack','cHours','cDist','cTime','cComms'].forEach(function(id){$(id).addEventListener('input',renderCheck)});
+
+  document.addEventListener('click',function(e){
+    var el;
+    if(e.target.closest('#gpsStart')){startTrack();return}
+    if(e.target.closest('#gpsStop')){stopTrack();toast('Tracking stopped');return}
+    if(e.target.closest('#gpsCheck')){checkInPhone();return}
+    if(e.target.closest('#fitMe')){showMe();return}
+    if(e.target.closest('#fitAll')){fitAll();return}
+    if(e.target.closest('#gpsClear')){if(confirm('Delete the saved trail on this phone?')){me.pts=[];me.queue=[];me.last=null;ls('baakTrail',[]);ls('baakQueue',[]);if(meL.g&&LM)LM.removeLayer(meL.g);meL={};renderMe();toast('Trail deleted')}return}
+    if((el=e.target.closest('[data-go]'))){var id=el.getAttribute('data-go');if(id==='gForm'){$('gForm').open=true}goto(id);return}
+    if(e.target.closest('#installBtn,#instGo')){install();return}
+    if(e.target.closest('#instClose')){try{sessionStorage.setItem('baakBar','1')}catch(x){}$('instBar').hidden=true;return}
+    if((el=e.target.closest('#copySms'))){var txt=document.querySelector('.sms').textContent;
+      (navigator.clipboard?navigator.clipboard.writeText(txt):Promise.reject()).then(function(){toast('Text copied')},function(){var r=document.createRange();r.selectNodeContents(document.querySelector('.sms'));var s=getSelection();s.removeAllRanges();s.addRange(r);toast('Text selected. Copy it now.')});return}
+    if(e.target.closest('#resetCheck')){$('cVessel').value='motor';$('cCrew').value=4;$('cJack').value=2;$('cHours').value=8;$('cDist').value=12;$('cTime').value='day';$('cComms').value='keypad';renderCheck();toast('Reset');return}
+    if((el=e.target.closest('[data-open]'))){focusTrip(el.getAttribute('data-open'),true);return}
+    if((el=e.target.closest('[data-act]'))){act(el.getAttribute('data-act'),el.getAttribute('data-id'));return}
+    if((el=e.target.closest('.boat'))){focusTrip(el.getAttribute('data-id'),true);return}
+    if((el=e.target.closest('#fleetList .row'))){var id2=el.getAttribute('data-id');openTrip[id2]=!openTrip[id2];renderFleet();return}
+    if((el=e.target.closest('.param'))){toast(el.getAttribute('data-k')+': '+el.getAttribute('data-v'));return}
+    if((el=e.target.closest('.rowg'))){var hi=+el.getAttribute('data-hi'),ss=seaState(hi);toast(el.getAttribute('data-r')+': '+ss.n+', waves '+(+el.getAttribute('data-lo')).toFixed(1)+' to '+hi.toFixed(1)+' m');return}
+    if((el=e.target.closest('.town'))){var tn=el.getAttribute('data-town'),here=trips.filter(function(t){return t.town===tn});if(here.length){focusTrip(here[0].id,true)}else{toast('No canoes from '+tn+' right now')}return}
+    if((el=e.target.closest('[data-step]'))){var n=+el.getAttribute('data-step');
+      document.querySelectorAll('.step').forEach(function(b){b.setAttribute('aria-pressed',String(+b.getAttribute('data-step')===n))});
+      $('stepMsg').textContent=STEPMSG[n];$('stepMsg').hidden=false;return}
+    if((el=e.target.closest('[data-comms]'))){var c=el.getAttribute('data-comms');$('cComms').value=c;renderCheck();goto('check');toast('Safe AI check set to '+COMMS[c].n);return}
+  });
+  document.addEventListener('keydown',function(e){
+    if(e.key!=='Enter'&&e.key!==' ')return;
+    var el=e.target.closest&&e.target.closest('#fleetList .row,.boat,[data-comms],.param,.rowg,.town');
+    if(el&&e.target===el){e.preventDefault();el.dispatchEvent(new MouseEvent('click',{bubbles:true}))}
+  });
+
+  function start(){fillForm();renderGmet();renderCheck();initMap();renderFleet();renderMe();showInstall(false);if(ls('baakOn')==='1')startTrack();}
+  /* Load the latest bulletin saved by the GitHub Action (data/gmet.json). Falls back to the example values. */
+  fetch('data/gmet.json',{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(d){
+    if(d&&!d.example&&d.w12&&d.w24){
+      gmet.w12=d.w12;gmet.w24=d.w24;gmet.g12=d.g12;gmet.g24=d.g24;gmet.dir=d.dir||gmet.dir;gmet.cur=d.cur||0;
+      gmet.vis=d.vis||gmet.vis;gmet.sst=d.sst||gmet.sst;gmet.sum=d.sum||gmet.sum;
+      gmet.issued='GMet bulletin issued '+d.issued;
+      if(d.issued_iso){var h=Math.round((Date.now()-Date.parse(d.issued_iso))/36e5);if(h>30)gmet.issued+=' (over a day old)';}
+    }
+  }).catch(function(){}).then(start);
+  setInterval(function(){var n=Date.now();trips.forEach(function(t){if(t.status==='sea'&&t.comms==='gps'){addFix(t,n);t.last=n;t.via=VIA.gps}});renderFleet()},30000);
+})();
+</script>
+</body>
+</html>
